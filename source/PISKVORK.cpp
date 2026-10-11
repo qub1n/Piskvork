@@ -20,6 +20,8 @@
 #include <shlobj.h>
 #include <time.h>
 #include "piskvork.h"
+#include "cli_startup.h"
+static bool noRegistry = false;
 
 #pragma comment(lib,"comctl32.lib")
 #pragma comment(lib,"version.lib")
@@ -1309,6 +1311,7 @@ void deleteini()
 
 void writeini(bool saveToolbar)
 {
+    if(noRegistry) return;
 	HKEY key;
 	if(RegCreateKey(HKEY_CURRENT_USER, subkey, &key)!=ERROR_SUCCESS)
 		msglng(735, "Cannot write to Windows registry");
@@ -1335,6 +1338,7 @@ void writeini(bool saveToolbar)
 
 void readini()
 {
+    if(noRegistry) return;
 	HKEY key;
 	DWORD d;
 
@@ -2762,7 +2766,13 @@ char* parseCommandLine(bool &openingEnabled)
 
 	for(int i=1; i < __argc; i++){
 		char *arg = __argv[i];
-		if(!strcmp(arg, "-p") && __argc > i+2){
+		if(!strcmp(arg, "-benchmark") || !strcmp(arg, "-no-registry")){
+            // Applied before reading settings and creating the board.
+        }
+        else if(!strcmp(arg, "-size") || !strcmp(arg, "-print-settings")){
+            ++i; // Validated and applied by parseCliStartup.
+        }
+        else if(!strcmp(arg, "-p") && __argc > i+2){
 			cmdLineGame=true;
 			strncpy(players[0].brain, __argv[++i], sizeof(players[0].brain)-1);
 			strncpy(players[1].brain, __argv[++i], sizeof(players[0].brain)-1);
@@ -2864,6 +2874,9 @@ char* parseCommandLine(bool &openingEnabled)
 //-----------------------------------------------------------------
 int pascal WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR, int cmdShow)
 {
+    CliStartup startup;
+    if(!parseCliStartup(__argc, __argv, startup)) return 64;
+    noRegistry = startup.noRegistry;
 	int i;
 	WNDCLASS wc;
 	MSG mesg;
@@ -2915,6 +2928,28 @@ int pascal WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR, int cmdShow)
 	players[1].timeGame= 600;
 	players[1].timeMove= 60000;
 	readini();
+    if(startup.size) width = height = startup.size;
+    if(startup.benchmark){
+        autoBegin = hardTimeOut = suspendAI = 1;
+        openingRandomShift1 = openingRandomShiftT = continuous = 0;
+        debugAI = tolerance = soundNotification = invert = 0;
+        ignoreErrors = 1;
+        cmdGameEnd[0] = cmdTurEnd[0] = 0;
+    }
+    if(startup.settingsFile){
+        bool enabled = true;
+        parseCommandLine(enabled);
+        FILE *file = fopen(startup.settingsFile, "w");
+        if(!file) return 65;
+        fprintf(file, "{\"width\":%d,\"height\":%d,\"rule\":%d,\"time_move_ms\":%d,\"time_match_seconds\":%d,\"no_registry\":%s,\"auto_begin\":%d,\"random_shift\":%d,\"timeout\":%d,\"tolerance\":%d,\"continuous\":%d,\"suspend_ai\":%d,\"debug_ai\":%d,\"sound\":%d,\"invert\":%d,\"completion_commands_empty\":%s}\n",
+            width, height, ruleFive, players[0].timeMove, players[0].timeGame,
+            noRegistry ? "true" : "false", autoBegin, openingRandomShift1,
+            hardTimeOut, tolerance, continuous, suspendAI, debugAI,
+            soundNotification, invert, !cmdGameEnd[0] && !cmdTurEnd[0] ? "true" : "false");
+        int error = ferror(file);
+        if(fclose(file)) error = 1;
+        return error ? 65 : 0;
+    }
 	initLang();
 	//register window class
 	wc.style= CS_OWNDC|CS_DBLCLKS;
@@ -2953,7 +2988,7 @@ int pascal WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR, int cmdShow)
 	sp.hkr=HKEY_CURRENT_USER;
 	sp.pszSubKey=subkey;
 	sp.pszValueName="toolbar";
-	SendMessage(toolbar, TB_SAVERESTORE, FALSE, (LPARAM)&sp);
+	if(!noRegistry) SendMessage(toolbar, TB_SAVERESTORE, FALSE, (LPARAM)&sp);
 	if(toolBarVisible){
 		ShowWindow(toolbar, SW_SHOW);
 		UpdateWindow(toolbar);
