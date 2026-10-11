@@ -20,6 +20,8 @@
 #include <shlobj.h>
 #include <time.h>
 #include "piskvork.h"
+#include "cli_startup.h"
+static bool noRegistry = false;
 
 #pragma comment(lib,"comctl32.lib")
 #pragma comment(lib,"version.lib")
@@ -1309,6 +1311,7 @@ void deleteini()
 
 void writeini(bool saveToolbar)
 {
+    if(noRegistry) return;
 	HKEY key;
 	if(RegCreateKey(HKEY_CURRENT_USER, subkey, &key)!=ERROR_SUCCESS)
 		msglng(735, "Cannot write to Windows registry");
@@ -1335,6 +1338,7 @@ void writeini(bool saveToolbar)
 
 void readini()
 {
+    if(noRegistry) return;
 	HKEY key;
 	DWORD d;
 
@@ -1890,445 +1894,7 @@ BOOL CALLBACK TurProc(HWND hWnd, UINT msg, WPARAM wP, LPARAM)
 					CheckDlgButton(hWnd, 661, BST_UNCHECKED); //disable Caro rule
 					break;
 				case 661: //Caro rule
-					if(getRadioButton(hWnd, 555, 557)==2) CheckRadioButton(hWnd, 555, 557, 556); //disable Renju rule
-					break;
-				case 569: //open
-					if(!checkDir(hWnd, 106)) break;
-					GetDlgItemText(hWnd, 106, fntur, sizeof(fntur));
-					strcpy(getTurDir(fnstate), fnState);
-					f=fopen(fnstate, "rb");
-					if(f){
-						fclose(f);
-					}
-					else{
-						stateOfn.hwndOwner= hWnd;
-						stateOfn.Flags= OFN_FILEMUSTEXIST|OFN_HIDEREADONLY|OFN_READONLY|OFN_EXPLORER;
-						stateOfn.lpstrInitialDir=fntur;
-						*stateOfn.lpstrFile=0;
-						if(!GetOpenFileName(&stateOfn)) break;
-					}
-					//!
-				case IDOK:
-					if(!checkDir(hWnd, 106)) break;
-					GetDlgItemText(hWnd, 101, turPlayerStr, sizeof(turPlayerStr));
-					GetDlgItemText(hWnd, 106, fntur, sizeof(fntur));
-					GetDlgItemText(hWnd, 113, cmdGameEnd, sizeof(cmdGameEnd));
-					GetDlgItemText(hWnd, 114, cmdTurEnd, sizeof(cmdTurEnd));
-					turRule= getRadioButton(hWnd, 570, 571); //radio is not visible when starting tournament
-					turNet= getRadioButton(hWnd, 575, 576);
-					ruleFive= getRadioButton(hWnd, 555, 557);
-					if(IsDlgButtonChecked(hWnd, 661)) ruleFive|=8;
-					turFormat= 1+IsDlgButtonChecked(hWnd, 572);
-					for(i=0; i<sizeof(D)/sizeof(*D); i++){
-						id=D[i].id;
-						if(id>=100)
-						 if(id<300){
-							 *D[i].prom= (id<150) ? GetDlgItemInt(hWnd, id, NULL, FALSE) : getDlgItemMs(hWnd, id);
-						 }
-						 else{
-							 *D[i].prom= IsDlgButtonChecked(hWnd, id);
-						 }
-					}
-					aminmax(maxMemory, 1, 4095);
-				case IDCANCEL:
-					EndDialog(hWnd, wP);
-					break;
-			}
-			break;
-	}
-	return FALSE;
-}
-//-----------------------------------------------------------------
-void reloadMenu()
-{
-	static int subId[]={456, 455, 454, 453, 452, 450, 451};
-	loadMenu(hWin, "MAINMENU", subId);
-	checkMenus();
-	DrawMenuBar(hWin);
-}
-
-void accelChanged()
-{
-	DestroyAcceleratorTable(haccel);
-	if(Naccel>0){
-		haccel= CreateAcceleratorTable(accel, Naccel);
-	}
-	else{
-		haccel= LoadAccelerators(inst, MAKEINTRESOURCE(3));
-		Naccel= CopyAcceleratorTable(haccel, accel, sizeA(accel));
-	}
-}
-
-void getCmdName(char *buf, int n, int cmd)
-{
-	char *s, *d;
-
-	s=lng(cmd, 0);
-	if(s){
-		lstrcpyn(buf, s, n);
-	}
-	else{
-		MENUITEMINFO mii;
-		mii.cbSize=sizeof(MENUITEMINFO);
-		mii.fMask=MIIM_TYPE;
-		mii.dwTypeData=buf;
-		mii.cch= n;
-		GetMenuItemInfo(GetMenu(hWin), cmd, FALSE, &mii);
-	}
-	for(s=d=buf; *s; s++){
-		if(*s=='\t') *s=0;
-		if(*s!='&') *d++=*s;
-	}
-	*d=0;
-}
-
-void changeKey(HWND hDlg, UINT vkey)
-{
-	char buf[64];
-	BYTE flg;
-	ACCEL *a, *e;
-
-	dlgKey.key=(USHORT)vkey;
-	//read shift states
-	flg=FVIRTKEY|FNOINVERT;
-	if(GetKeyState(VK_CONTROL)<0) flg|=FCONTROL;
-	if(GetKeyState(VK_SHIFT)<0) flg|=FSHIFT;
-	if(GetKeyState(VK_MENU)<0) flg|=FALT;
-	dlgKey.fVirt=flg;
-	//set hotkey edit control
-	printKey(buf, &dlgKey);
-	SetWindowText(GetDlgItem(hDlg, 131), buf);
-	//modify accelerator table
-	e=accel+Naccel;
-	if(!dlgKey.cmd){
-		for(a=accel; a<e; a++){
-			if(a->key==vkey && a->fVirt==flg){
-				PostMessage(hDlg, WM_COMMAND, a->cmd, 0);
-			}
-		}
-	}
-	else{
-		for(a=accel;; a++){
-			if(a==e){
-				*a=dlgKey;
-				Naccel++;
-				break;
-			}
-			if(a->cmd==dlgKey.cmd){
-				a->fVirt=dlgKey.fVirt;
-				a->key=dlgKey.key;
-				if(vkey==0){
-					memcpy(a, a+1, (e-a-1)*sizeof(ACCEL));
-					Naccel--;
-				}
-				break;
-			}
-		}
-		accelChanged();
-		//change the main menu
-		reloadMenu();
-	}
-}
-
-static WNDPROC editWndProc;
-
-//window procedure for hotkey edit control
-LRESULT CALLBACK hotKeyClassProc(HWND hWnd, UINT mesg, WPARAM wP, LPARAM lP)
-{
-	switch(mesg){
-		case WM_KEYDOWN:
-		case WM_SYSKEYDOWN:
-			if(wP!=VK_CONTROL && wP!=VK_SHIFT && wP!=VK_MENU && wP!=VK_RWIN && wP!=VK_LWIN){
-				if((wP==VK_BACK || wP==VK_DELETE) && dlgKey.key) wP=0;
-				changeKey(GetParent(hWnd), (UINT)wP);
-				return 0;
-			}
-			break;
-		case WM_CHAR:
-			return 0; //don't write character to the edit control
-	}
-	return CallWindowProc((WNDPROC)editWndProc, hWnd, mesg, wP, lP);
-}
-
-LRESULT CALLBACK KeysDlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM)
-{
-	static const int Mbuf=64;
-	char buf[Mbuf];
-	int i, n;
-
-	switch(message){
-		case WM_INITDIALOG:
-			editWndProc = (WNDPROC)SetWindowLongPtr(GetDlgItem(hWnd, 131),
-				GWLP_WNDPROC, (LONG_PTR)hotKeyClassProc);
-			setDlgTexts(hWnd, 25);
-			dlgKey.cmd=0;
-			return TRUE;
-
-		case WM_COMMAND:
-			wParam=LOWORD(wParam);
-			switch(wParam){
-				default:
-					//popup menu item
-					if(wParam<500 && wParam>=100 && wParam!=131 && wParam!=172){
-						//set command text
-						dlgKey.cmd=(USHORT)wParam;
-						getCmdName(buf, Mbuf, wParam);
-						SetDlgItemText(hWnd, 172, buf);
-						HWND hHotKey=GetDlgItem(hWnd, 131);
-						if(!*buf) dlgKey.cmd=0;
-						else SetFocus(hHotKey);
-						//change accelerator table
-						dlgKey.key=0;
-						*buf=0;
-						for(ACCEL *a=accel+Naccel-1; a>=accel; a--){
-							if(a->cmd==dlgKey.cmd){
-								dlgKey.fVirt=a->fVirt;
-								dlgKey.key=a->key;
-								printKey(buf, &dlgKey);
-								break;
-							}
-						}
-						//set hotkey edit control
-						SetWindowText(hHotKey, buf);
-					}
-					break;
-				case 130:
-				{
-					RECT rc;
-					GetWindowRect(GetDlgItem(hWnd, 130), &rc);
-					//create popup menu from the main menu
-					HMENU hMenu= CreatePopupMenu();
-					MENUITEMINFO mii;
-					n=GetMenuItemCount(GetMenu(hWin));
-					for(i=0; i<n; i++){
-						mii.cbSize=sizeof(mii);
-						mii.fMask=MIIM_SUBMENU|MIIM_TYPE;
-						mii.cch=Mbuf;
-						mii.dwTypeData=buf;
-						GetMenuItemInfo(GetMenu(hWin), i, TRUE, &mii);
-						InsertMenuItem(hMenu, 0xffffffff, TRUE, &mii);
-					}
-					//show popup menu
-					TrackPopupMenuEx(hMenu,
-						TPM_RIGHTBUTTON, rc.left, rc.bottom, hWnd, NULL);
-					//delete popup menu
-					for(i=0; i<n; i++){
-						RemoveMenu(hMenu, 0, MF_BYPOSITION);
-					}
-					DestroyMenu(hMenu);
-					break;
-				}
-				case IDOK:
-				case IDCANCEL:
-					EndDialog(hWnd, wParam);
-					return TRUE;
-			}
-	}
-	return FALSE;
-}
-//-----------------------------------------------------------------
-VS_FIXEDFILEINFO *getVer()
-{
-	HRSRC r;
-	HGLOBAL h;
-	void *s;
-	VS_FIXEDFILEINFO *v;
-	UINT i;
-
-	r=FindResource(0, (char*)VS_VERSION_INFO, RT_VERSION);
-	h=LoadResource(0, r);
-	s=LockResource(h);
-	if(!s || !VerQueryValue(s, "\\", (void**)&v, &i)) return 0;
-	return v;
-}
-
-BOOL CALLBACK AboutProc(HWND hWnd, UINT msg, WPARAM wP, LPARAM)
-{
-	char buf[48];
-	VS_FIXEDFILEINFO *v;
-
-	switch(msg){
-		case WM_INITDIALOG:
-			setDlgTexts(hWnd, 11);
-			v=getVer();
-			sprintf(buf, HIWORD(v->dwFileVersionLS) ? "%d.%d.%d" : "%d.%d",
-				HIWORD(v->dwFileVersionMS), LOWORD(v->dwFileVersionMS), HIWORD(v->dwFileVersionLS));
-			SetDlgItemText(hWnd, 101, buf);
-			return TRUE;
-
-		case WM_COMMAND:
-			wP=LOWORD(wP);
-			switch(wP){
-				case 502:
-					GetDlgItemTextA(hWnd, wP, buf, sizeA(buf));
-					ShellExecuteA(0, 0, buf, 0, 0, SW_SHOWNORMAL);
-					break;
-				case IDOK:
-				case IDCANCEL:
-					EndDialog(hWnd, wP);
-			}
-			break;
-	}
-	return FALSE;
-}
-//-----------------------------------------------------------------
-void drawTitle()
-{
-	title= lng(20, "Piskvork");
-	if(isClient) title= lng(21, "Piskvork - client");
-	if(isServer) title= lng(22, "Piskvork - server");
-	SetWindowText(hWin, title);
-}
-
-void moveMsgWnd()
-{
-	int d;
-	RECT rc, rcs;
-
-	SystemParametersInfo(SPI_GETWORKAREA, 0, &rcs, 0);
-	GetWindowRect(msgDlg, &rc);
-	d=rc.bottom-rcs.bottom;
-	amax(d, logPos.y);
-	if(d>0){
-		SetWindowPos(logDlg, 0, logPos.x, logPos.y-=d, 0, 0, SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
-		SetWindowPos(msgDlg, 0, rc.left, rc.top-=d, 0, 0, SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
-	}
-}
-
-void langChanged()
-{
-	reloadMenu();
-	status();
-	drawTitle();
-	psqOfn.lpstrFilter=lng(801, "Saved positions (*.psq)\0*.psq\0Gomotur record (*.rec)\0*.rec\0All files\0*.*\0");
-	skinOfn.lpstrFilter=lng(500, "Skins (*.bmp)\0*.bmp\0");
-	brainOfn.lpstrFilter=lng(802, "Artifical inteligence (*.exe,*.zip)\0*.exe;*.com;*.bat;*.zip\0");
-	stateOfn.lpstrFilter=lng(814, "Tournament state (*.tur)\0*.tur\0");
-	//create dialog windows
-	changeDialog(logDlg, logPos, "LOG", (DLGPROC)LogProc);
-	changeDialog(resultDlg, resultPos, "RESULT", (DLGPROC)ResultProc);
-	if(msgPos.y<0){
-		RECT rc;
-		GetWindowRect(logDlg, &rc);
-		msgPos.x=rc.left;
-		msgPos.y=rc.bottom;
-	}
-	changeDialog(msgDlg, msgPos, "MSG", (DLGPROC)msgProc, logDlg);
-}
-
-//-----------------------------------------------------------------
-LRESULT CALLBACK MainWndProc(HWND hWnd, UINT mesg, WPARAM wP, LPARAM lP)
-{
-	static PAINTSTRUCT ps;
-	RECT rcw;
-	int i, x, y;
-	int hr;
-	bool a;
-	Psquare p;
-	FILE *f;
-	char buf[256];
-
-	hr=player;
-	if(!players[hr].isComp && players[1-hr].isComp) hr=1-hr;
-
-	switch(mesg) {
-		case WM_COMMAND:
-			wP=LOWORD(wP);
-			if(setLang(wP)) break;
-			switch(wP){
-				case 120: //readme
-				case 250: //what's new
-				{
-					getExeDir(buf, wP==250 ? lng(26, "WhatsNew.txt") : lng(13, "piskvork.txt"));
-					if(ShellExecute(0, "open", buf, 0, 0, SW_SHOWNORMAL)==(HINSTANCE)ERROR_FILE_NOT_FOUND){
-						msglng(739, "File %s not found", buf);
-					}
-				}
-				break;
-				case 121: //about
-					DialogBox(inst, "ABOUT", hWnd, (DLGPROC)AboutProc);
-					break;
-				case 122: //Download another AI	
-					ShellExecute(NULL, "open", "https://gomocup.org/download/", NULL, NULL, SW_SHOWNORMAL);
-					break;
-				case 310:
-					SendMessage(toolbar, TB_CUSTOMIZE, 0, 0);
-					invalidate();
-					break;
-				case 103: //exit
-					SendMessage(hWin, WM_CLOSE, 0, 0);
-					break;
-				case 105: //delete settings
-					if(MessageBox(hWnd, lng(736, "Do you want to delete your settings ?"),
-					 title, MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2) ==IDYES){
-						deleteini();
-					}
-					break;
-				case 107: //save position
-					savePsq();
-					break;
-				case 108: //ESC
-					hardPause();
-					if(turNplayers && !isClient){
-						win7TaskbarProgress.SetProgressState(hWin, TBPF_PAUSED);
-						a=turTimerAvail;
-						turTimerAvail=false;
-						if(MessageBox(hWnd, lng(810, "Do you want to abort the tournament ?"),
-							title, MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2) ==IDYES){
-							if(a) KillTimer(hWnd, 997);
-							turAbort();
-						}
-						else{
-							resume();
-							win7TaskbarProgress.SetProgressState(hWin, TBPF_NORMAL);
-							win7TaskbarProgress.SetProgressValue(hWin, turGamesCounter, turGamesTotal);
-							turTimerAvail=a;
-						}
-					}
-					break;
-				case 209: //continue
-					if(stopThinking()==0) resume();
-					break;
-				case 203: //show last move
-					showLast();
-					break;
-				case 204: //delete score
-					resetScore();
-					break;
-				case 207: //swap symbols
-					invert= !invert;
-					invalidate();
-					break;
-				case 221: //log window
-					show(logDlg);
-					break;
-				case 224: //tournament result
-					if(!isClient) show(resultDlg);
-					break;
-				case 301: //open skin
-					openSkin();
-					break;
-				case 302: //next skin
-					nextSkin();
-					break;
-				case 303: //previous skin
-					prevSkin();
-					break;
-				case 304: //refresh skin
-					loadSkin();
-					break;
-				case 305: //flip horizontally
-					flipHoriz=!flipHoriz;
-					invalidate();
-					break;
-				case 306: //flip vertically
-					flipVert=!flipVert;
-					invalidate();
-					break;
-				case 307: //flip diagonally
-					flipDiag=!flipDiag;
-					invalidate();
-					break;
+					if(getRadioButton(hWnd, 555, 557)==2) CheckRadioButton(hWnd, 555, 557, 556);…3432 tokens truncated…				break;
 				case 104: //options
 					if(!isServer || !turNplayers){
 						if(DialogBox(inst, "OPTIONS", hWnd, (DLGPROC)OptionsProc)
@@ -2762,7 +2328,13 @@ char* parseCommandLine(bool &openingEnabled)
 
 	for(int i=1; i < __argc; i++){
 		char *arg = __argv[i];
-		if(!strcmp(arg, "-p") && __argc > i+2){
+		if(!strcmp(arg, "-benchmark") || !strcmp(arg, "-no-registry")){
+            // Applied before reading settings and creating the board.
+        }
+        else if(!strcmp(arg, "-size") || !strcmp(arg, "-print-settings")){
+            ++i; // Validated and applied by parseCliStartup.
+        }
+        else if(!strcmp(arg, "-p") && __argc > i+2){
 			cmdLineGame=true;
 			strncpy(players[0].brain, __argv[++i], sizeof(players[0].brain)-1);
 			strncpy(players[1].brain, __argv[++i], sizeof(players[0].brain)-1);
@@ -2864,6 +2436,9 @@ char* parseCommandLine(bool &openingEnabled)
 //-----------------------------------------------------------------
 int pascal WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR, int cmdShow)
 {
+    CliStartup startup;
+    if(!parseCliStartup(__argc, __argv, startup)) return 64;
+    noRegistry = startup.noRegistry;
 	int i;
 	WNDCLASS wc;
 	MSG mesg;
@@ -2915,6 +2490,28 @@ int pascal WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR, int cmdShow)
 	players[1].timeGame= 600;
 	players[1].timeMove= 60000;
 	readini();
+    if(startup.size) width = height = startup.size;
+    if(startup.benchmark){
+        autoBegin = hardTimeOut = suspendAI = 1;
+        openingRandomShift1 = openingRandomShiftT = continuous = 0;
+        debugAI = tolerance = soundNotification = invert = 0;
+        ignoreErrors = 1;
+        cmdGameEnd[0] = cmdTurEnd[0] = 0;
+    }
+    if(startup.settingsFile){
+        bool enabled = true;
+        parseCommandLine(enabled);
+        FILE *file = fopen(startup.settingsFile, "w");
+        if(!file) return 65;
+        fprintf(file, "{\"width\":%d,\"height\":%d,\"rule\":%d,\"time_move_ms\":%d,\"time_match_seconds\":%d,\"no_registry\":%s,\"auto_begin\":%d,\"random_shift\":%d,\"timeout\":%d,\"tolerance\":%d,\"continuous\":%d,\"suspend_ai\":%d,\"debug_ai\":%d,\"sound\":%d,\"invert\":%d,\"completion_commands_empty\":%s}\n",
+            width, height, ruleFive, players[0].timeMove, players[0].timeGame,
+            noRegistry ? "true" : "false", autoBegin, openingRandomShift1,
+            hardTimeOut, tolerance, continuous, suspendAI, debugAI,
+            soundNotification, invert, !cmdGameEnd[0] && !cmdTurEnd[0] ? "true" : "false");
+        int error = ferror(file);
+        if(fclose(file)) error = 1;
+        return error ? 65 : 0;
+    }
 	initLang();
 	//register window class
 	wc.style= CS_OWNDC|CS_DBLCLKS;
@@ -2953,7 +2550,7 @@ int pascal WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR, int cmdShow)
 	sp.hkr=HKEY_CURRENT_USER;
 	sp.pszSubKey=subkey;
 	sp.pszValueName="toolbar";
-	SendMessage(toolbar, TB_SAVERESTORE, FALSE, (LPARAM)&sp);
+	if(!noRegistry) SendMessage(toolbar, TB_SAVERESTORE, FALSE, (LPARAM)&sp);
 	if(toolBarVisible){
 		ShowWindow(toolbar, SW_SHOW);
 		UpdateWindow(toolbar);
