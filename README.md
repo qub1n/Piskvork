@@ -26,7 +26,10 @@ defaults (commit `56cfd7dc1a0d1ec06d29f44a26931f375ad05991`):
 https://github.com/Gomocup/GomocupJudge/blob/56cfd7dc1a0d1ec06d29f44a26931f375ad05991/client/new_protocol.py#L127
 `-tolerance N` explicitly overrides it (0–60000 ms); use `-tolerance 0` for strict
 clock regressions. Engines still receive the unchanged `INFO timeout_turn` and
-`INFO timeout_match` budgets.
+`INFO timeout_match` budgets. CLI game clocks start at the decision request and
+stop at receipt of the complete coordinate line. Thread suspension, setup and
+protocol-log processing are not charged to either engine. Protocol logs retain
+their order; output generated during a decision is buffered until its reply.
 Invalid new options exit with code 64 before windows or engines start.
 Without these new switches the interactive application's behavior is unchanged.
 

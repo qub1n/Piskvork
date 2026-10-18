@@ -515,6 +515,57 @@ void Tplayer::wrDebugLog(char *s)
 }
 
 //read one line from the pipe
+void Tplayer::beginTurnClock()
+{
+	if(!cmdLineGame) return;
+	EnterCriticalSection(&timerLock);
+	lastTick=getTickCount();
+	turnClock.start(lastTick);
+	timeInit=0;
+	LeaveCriticalSection(&timerLock);
+}
+
+void Tplayer::finishTurnClock()
+{
+	if(!cmdLineGame) return;
+	EnterCriticalSection(&timerLock);
+	turnClock.stop(getTickCount());
+	LeaveCriticalSection(&timerLock);
+}
+
+void Tplayer::recordProtocol(const char* line, bool incoming)
+{
+	// Disk/GUI logging must not hold up the pipe reader near the deadline.
+	if(cmdLineGame && ((turnClock.started() && !turnClock.stopped()) || !pendingProtocol.empty())) {
+		// Bound buffering for engines that emit unusually large amounts of output.
+		if(pendingProtocolBytes+strlen(line)>8*1024*1024) flushProtocol();
+		pendingProtocol.push_back(ProtocolLine(line,incoming));
+		pendingProtocolBytes+=strlen(line);
+		return;
+	}
+	writeProtocol(line,incoming);
+}
+
+void Tplayer::writeProtocol(const char* line, bool incoming)
+{
+	wrDebugLog(const_cast<char*>(line));
+	if(incoming && !_strnicmp(line,"debug ",6)) {
+		if(logDebug) wrLog("%s: %s",getFilePart(),line+6);
+	}
+	if(incoming && !_strnicmp(line,"message ",8)) {
+		if(logMessage || cmdlineLogMsgOutFile[0]) wrMsg(const_cast<char*>(line+8));
+	}
+}
+
+void Tplayer::flushProtocol()
+{
+	std::vector<ProtocolLine> lines;
+	lines.swap(pendingProtocol);
+	pendingProtocolBytes=0;
+	for(size_t i=0;i<lines.size();++i)
+		writeProtocol(lines[i].text.c_str(),lines[i].incoming);
+}
+
 int Tplayer::readCommand(char *buf, int n)
 {
 	char *p;
@@ -524,22 +575,25 @@ int Tplayer::readCommand(char *buf, int n)
 			DWORD r;
 			if(!ReadFile(pipeFromAI, p, 1, &r, 0) || !r){
 				*p=0;
+				finishTurnClock();
+				flushProtocol();
 				return 1;
 			}
 			if(*p=='\r' || *p=='\n') break;
 			if(p<buf+n-3) p++;
 		}
 		*p=0;
-		wrDebugLog(buf);
+		int x,y;
+		if(sscanf(buf,"%d,%d",&x,&y)==2) finishTurnClock();
+		recordProtocol(buf,true);
 		if(!_strnicmp(buf, "debug ", 6)){
-			if(logDebug) wrLog("%s: %s", getFilePart(), buf+6);
 			p=buf;
 		}
 		if(!_strnicmp(buf, "message ", 8)){
-			if(logMessage || strlen(cmdlineLogMsgOutFile) > 0) wrMsg(buf+8);
 			p=buf;
 		}
 	} while(p==buf);
+	if(cmdLineGame && turnClock.stopped()) flushProtocol();
 	return 0;
 }
 
@@ -555,10 +609,12 @@ void Tplayer::sendCommand(char *text, ...)
 	buf[i++]='\n';
 	buf[i]=0;
 	DWORD w;
+	if(!strncmp(buf,"TURN ",5) || !strcmp(buf,"BEGIN\r\n") || !strcmp(buf,"DONE\r\n"))
+		beginTurnClock();
 	WriteFile(pipeToAI, buf, i, &w, 0);
 	if(strncmp(buf, "INFO eval", 9)){
 		buf[i-2]=0;
-		wrDebugLog(buf);
+		recordProtocol(buf,false);
 	}
 	va_end(v);
 }
@@ -746,7 +802,7 @@ int Tplayer::move()
 				return 2;
 			}
 			mustSendBoard=false;
-			timeInit= getTickCount()-lastTick;
+			timeInit= cmdLineGame ? 0 : getTickCount()-lastTick;
 			sendInfo();
 			if(moves==0){
 				sendCommand("BEGIN");
@@ -796,6 +852,7 @@ int Tplayer::move()
 			}
 			sendCommand("PLAY %s", buf+8);
 		}
+		flushProtocol();
 		getMem();
 	}
 	else{
@@ -807,8 +864,10 @@ int Tplayer::move()
 		//start process and wait until it is finished
 		STARTUPINFO si;
 		memset(&si, 0, sizeof(si));
+		beginTurnClock();
 		if(createProcess(false, si)) return 4;
 		WaitForSingleObject(process, INFINITE);
+		finishTurnClock();
 		getMem();
 		if(process){
 			CloseHandle(process);
@@ -842,6 +901,8 @@ int Tplayer::move()
 	}
 	err=0;
 	EnterCriticalSection(&timerLock);
+	// Enforce the same deadline even if the UI timer did not poll before a late reply.
+	if(cmdLineGame) checkTimeOut((int)turnClock.elapsed(getTickCount()));
 	if(finished){
 		err=15; //timeout
 	}

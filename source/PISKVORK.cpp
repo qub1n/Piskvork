@@ -827,7 +827,8 @@ void printTime(int pl)
 	t=players[pl].time;
 	//turn time
 	if(pl==player && !paused && (moves>0 || players[pl].isComp)){
-		c=getTickCount()-lastTick;
+		c=cmdLineGame && players[pl].isComp
+			? (int)players[pl].turnClock.elapsed(getTickCount()) : getTickCount()-lastTick;
 		t+=c;
 		lastTurnTime[pl]=c;
 		players[pl].checkTimeOut(c);
