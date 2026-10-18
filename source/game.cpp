@@ -203,6 +203,10 @@ int Tplayer::timeLeft()
 
 void Tplayer::checkTimeOut(int currentTime)
 {
+	if(cmdLineGame && isComp) {
+		if(!turnClock.started()) return;
+		currentTime=(int)turnClock.elapsed(getTickCount());
+	}
 	if(!turNplayers && !(isComp ? hardTimeOut : humanTimeOut) ||
 		isTimeOut || levelChanged || isNetGame) return;
 	if(!isComp) timeInit=0;
@@ -1232,7 +1236,8 @@ bool doMove1(Psquare p, int action)
 	if(action!=3){
 		DWORD t=getTickCount();
 		if(action==0){
-			p->time= t-lastTick;
+			p->time= cmdLineGame && players[player].isComp
+				? (int)players[player].turnClock.elapsed(t) : t-lastTick;
 			if(turNplayers) amin(turTable[players[player].turPlayerId].maxTurnTime, p->time);
 		}
 		if(action<2){
@@ -1251,6 +1256,7 @@ bool doMove1(Psquare p, int action)
 
 	//switch players
 	player=1-player;
+	if(cmdLineGame) players[player].turnClock.prepare();
 	printTime(1-player);
 	levelChanged=false;
 	//check winning lines

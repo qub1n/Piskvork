@@ -16,6 +16,9 @@
 	*/
 #include "lang.h"
 #include "taskbarprogress.h"
+#include "turn_clock.h"
+#include <string>
+#include <vector>
 
 #define myAI "pbrain-pela"
 #define fnHtmlTable "_table.html"
@@ -69,6 +72,14 @@ struct ThreadItem
 
 struct Tplayer
 {
+ struct ProtocolLine {
+     std::string text;
+     bool incoming;
+     ProtocolLine(const char* value, bool read) : text(value), incoming(read) {}
+ };
+ TurnClock turnClock;
+ std::vector<ProtocolLine> pendingProtocol;
+ size_t pendingProtocolBytes = 0;
  int isComp;   //0=human, 1=computer
  int timeMove; //time for a move (ms)
  int timeGame; //time for a game (s)
@@ -115,6 +126,11 @@ struct Tplayer
  void wrMsg(char *s);
  void wrDebugLog(char *s);
  void openThreads();
+ void beginTurnClock();
+ void finishTurnClock();
+ void recordProtocol(const char* line, bool incoming);
+ void writeProtocol(const char* line, bool incoming);
+ void flushProtocol();
 
  FILE *infoDatFile;
 };

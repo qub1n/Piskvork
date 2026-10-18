@@ -827,7 +827,8 @@ void printTime(int pl)
 	t=players[pl].time;
 	//turn time
 	if(pl==player && !paused && (moves>0 || players[pl].isComp)){
-		c=getTickCount()-lastTick;
+		c=cmdLineGame && players[pl].isComp
+			? (int)players[pl].turnClock.elapsed(getTickCount()) : getTickCount()-lastTick;
 		t+=c;
 		lastTurnTime[pl]=c;
 		players[pl].checkTimeOut(c);
@@ -2361,6 +2362,7 @@ LRESULT CALLBACK MainWndProc(HWND hWnd, UINT mesg, WPARAM wP, LPARAM lP)
 					restartGame();
 					break;
 				case 994: //show log or result
+					if(cmdLineGame) break;
 					ShowWindow((HWND)lP, SW_SHOW);
 					SetForegroundWindow((HWND)lP);
 					break;
@@ -3023,7 +3025,7 @@ int pascal WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR, int cmdShow)
 		c->thread=0;
 		c->player[0]=-1;
 	}
-	ShowWindow(hWin, cmdShow);
+	if(!startup.benchmark) ShowWindow(hWin, cmdShow);
 	initOpeningTab();
 
 	bool openingEnabled = true;
