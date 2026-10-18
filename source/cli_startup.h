@@ -4,9 +4,9 @@
 
 struct CliStartup {
     bool noRegistry, benchmark;
-    int size;
+    int size, tolerance;
     const char *settingsFile;
-    CliStartup(): noRegistry(false), benchmark(false), size(0), settingsFile(0) {}
+    CliStartup(): noRegistry(false), benchmark(false), size(0), tolerance(-1), settingsFile(0) {}
 };
 
 // Read before any registry or window access. Existing match switches are parsed later.
@@ -21,6 +21,14 @@ inline bool parseCliStartup(int argc, char **argv, CliStartup &options)
         }
         else if(!strcmp(argv[i], "-no-registry")) options.noRegistry = true;
         else if(!strcmp(argv[i], "-benchmark")) options.benchmark = options.noRegistry = true;
+        else if(!strcmp(argv[i], "-tolerance")){
+            if(++i >= argc || !*argv[i]) return false;
+            for(const char *p=argv[i]; *p; ++p) if(*p<'0' || *p>'9') return false;
+            char *end;
+            long value = strtol(argv[i], &end, 10);
+            if(*end || value<0 || value>60000) return false;
+            options.tolerance = (int)value;
+        }
         else if(!strcmp(argv[i], "-size")){
             if(++i >= argc || !*argv[i]) return false;
             for(const char *p=argv[i]; *p; ++p) if(*p<'0' || *p>'9') return false;

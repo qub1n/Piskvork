@@ -1,10 +1,17 @@
 #include "../source/cli_startup.h"
 #include <assert.h>
+#include <initializer_list>
 
 bool parse(const char *command[], int count, CliStartup &options){
     return parseCliStartup(count, (char**)command, options);
 }
 int main(){
+    { const char *args[]={"piskvork", "-tolerance", "1000"};
+      CliStartup o; assert(parse(args,3,o)); assert(o.tolerance==1000); }
+    { const char *args[]={"piskvork", "-tolerance", "0"};
+      CliStartup o; assert(parse(args,3,o)); assert(o.tolerance==0); }
+    for(const char* value : {"-1", "60001", "1000ms", "99999999999999999999", ""}) {
+      const char *args[]={"piskvork", "-tolerance", value}; CliStartup o; assert(!parse(args,3,o)); }
     { const char *args[]={"piskvork", "-benchmark", "-size", "15", "-p", "one.exe", "two.exe"};
       CliStartup o; assert(parse(args,7,o)); assert(o.noRegistry && o.benchmark && o.size==15); }
     { const char *args[]={"piskvork", "-size", "20"};
