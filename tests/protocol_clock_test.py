@@ -5,7 +5,24 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import ctypes
+from ctypes import wintypes
+import time
 from hidden_job import run
+
+
+def visible_windows(pid):
+    found = []
+    callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    @callback
+    def visit(window, unused):
+        owner = wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
+        if owner.value == pid and ctypes.windll.user32.IsWindowVisible(window):
+            found.append(window)
+        return True
+    ctypes.windll.user32.EnumWindows(visit, 0)
+    return found
 
 
 def check(manager, slow, fast, delay, tolerance, expected):
@@ -25,8 +42,10 @@ def check(manager, slow, fast, delay, tolerance, expected):
                    "-outfileformat", "1", "-logpipe", str(root / "protocol-")]
         previous_delay = os.environ.get('PISKVORK_TEST_DELAY_MS')
         os.environ['PISKVORK_TEST_DELAY_MS'] = str(delay)
+        def observe(pid):
+            assert not visible_windows(pid), "benchmark exposed a visible window"
         try:
-            code = run(command, root, 35)
+            code = run(command, root, 35, observe=observe)
         finally:
             if previous_delay is None: os.environ.pop('PISKVORK_TEST_DELAY_MS', None)
             else: os.environ['PISKVORK_TEST_DELAY_MS'] = previous_delay
