@@ -827,7 +827,8 @@ void printTime(int pl)
 	t=players[pl].time;
 	//turn time
 	if(pl==player && !paused && (moves>0 || players[pl].isComp)){
-		c=getTickCount()-lastTick;
+		c=cmdLineGame && players[pl].isComp
+			? (int)players[pl].turnClock.elapsed(getTickCount()) : getTickCount()-lastTick;
 		t+=c;
 		lastTurnTime[pl]=c;
 		players[pl].checkTimeOut(c);
@@ -2361,6 +2362,7 @@ LRESULT CALLBACK MainWndProc(HWND hWnd, UINT mesg, WPARAM wP, LPARAM lP)
 					restartGame();
 					break;
 				case 994: //show log or result
+					if(cmdLineGame) break;
 					ShowWindow((HWND)lP, SW_SHOW);
 					SetForegroundWindow((HWND)lP);
 					break;
@@ -2769,7 +2771,7 @@ char* parseCommandLine(bool &openingEnabled)
 		if(!strcmp(arg, "-benchmark") || !strcmp(arg, "-no-registry")){
             // Applied before reading settings and creating the board.
         }
-        else if(!strcmp(arg, "-size") || !strcmp(arg, "-print-settings")){
+        else if(!strcmp(arg, "-size") || !strcmp(arg, "-print-settings") || !strcmp(arg, "-tolerance")){
             ++i; // Validated and applied by parseCliStartup.
         }
         else if(!strcmp(arg, "-p") && __argc > i+2){
@@ -2932,10 +2934,13 @@ int pascal WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR, int cmdShow)
     if(startup.benchmark){
         autoBegin = hardTimeOut = suspendAI = 1;
         openingRandomShift1 = openingRandomShiftT = continuous = 0;
-        debugAI = tolerance = soundNotification = invert = 0;
+        debugAI = soundNotification = invert = 0;
+        // GomocupJudge client/ai_match.py and new_protocol.py default to 1000 ms.
+        tolerance = 1000;
         ignoreErrors = 1;
         cmdGameEnd[0] = cmdTurEnd[0] = 0;
     }
+    if(startup.tolerance>=0) tolerance=startup.tolerance;
     if(startup.settingsFile){
         bool enabled = true;
         parseCommandLine(enabled);
@@ -3020,7 +3025,7 @@ int pascal WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR, int cmdShow)
 		c->thread=0;
 		c->player[0]=-1;
 	}
-	ShowWindow(hWin, cmdShow);
+	if(!startup.benchmark) ShowWindow(hWin, cmdShow);
 	initOpeningTab();
 
 	bool openingEnabled = true;

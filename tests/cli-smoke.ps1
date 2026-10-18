@@ -21,7 +21,7 @@ try {
         if ($process.ExitCode -ne 0) { throw "CLI diagnostic failed: $($process.ExitCode)" }
         $s = Get-Content -LiteralPath $json -Raw | ConvertFrom-Json
         if ($s.width -ne $size -or $s.height -ne $size -or $s.rule -ne 1 -or $s.time_move_ms -ne 5000 -or $s.time_match_seconds -ne 120 -or !$s.no_registry -or !$s.completion_commands_empty) { throw 'Wrong effective CLI settings' }
-        if ($s.auto_begin -ne 1 -or $s.timeout -ne 1 -or $s.suspend_ai -ne 1 -or $s.random_shift -ne 0 -or $s.tolerance -ne 0 -or $s.continuous -ne 0 -or $s.debug_ai -ne 0 -or $s.sound -ne 0 -or $s.invert -ne 0) { throw 'Wrong benchmark profile' }
+        if ($s.auto_begin -ne 1 -or $s.timeout -ne 1 -or $s.suspend_ai -ne 1 -or $s.random_shift -ne 0 -or $s.tolerance -ne 1000 -or $s.continuous -ne 0 -or $s.debug_ai -ne 0 -or $s.sound -ne 0 -or $s.invert -ne 0) { throw 'Wrong benchmark profile' }
     }
     $after = (Get-ItemProperty -LiteralPath $key | Select-Object sirka,height,continuous,soundNotification,openingRandomShift1,cmdGame | ConvertTo-Json -Compress)
     if ($before -ne $after) { throw 'CLI modified the registry' }

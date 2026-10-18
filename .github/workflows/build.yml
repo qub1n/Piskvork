@@ -28,6 +28,16 @@ jobs:
           if errorlevel 1 exit /b 1
           cli_startup_test.exe
           if errorlevel 1 exit /b 1
+          cl /nologo /EHsc tests\turn_clock_test.cpp /Fe:turn_clock_test.exe
+          if errorlevel 1 exit /b 1
+          turn_clock_test.exe
+          if errorlevel 1 exit /b 1
+          cl /nologo /EHsc /O2 /MT tests\clock_engine.cpp /Fe:pbrain-clock-slow.exe
+          if errorlevel 1 exit /b 1
+          copy /y pbrain-clock-slow.exe pbrain-clock-fast.exe
+      - name: Verify protocol clock boundaries and Gomocup tolerance
+        shell: pwsh
+        run: python tests/protocol_clock_test.py artifact/piskvork.exe pbrain-clock-slow.exe pbrain-clock-fast.exe
       - name: Verify effective settings and registry isolation
         shell: pwsh
         run: ./tests/cli-smoke.ps1 -Executable artifact/piskvork.exe
